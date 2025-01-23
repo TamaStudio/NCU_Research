@@ -7,6 +7,12 @@ from tqdm import tqdm
 
 #def column_boxes(page: pymupdf.Page, foter_margin: int = 0, no_image_text: bool = True) -> list:
 
+def read_pdf(source_path, result_path):
+    # Processing PDF
+    pdf_input_path = "source_path"
+    pdf_output_path = "result_path"
+    result = process_pdfs_in_folder(pdf_input_path, pdf_output_path)
+    return result
 
 #Extract Text From PDF
 def extract_pdf(pdf_path):

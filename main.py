@@ -2,65 +2,46 @@ import os
 import re
 import llm
 import prompt
-import pdf_reader
 import knowledge_graph
+import drm
+#import wiki
 from langchain_core.prompts import PromptTemplate
 
+pdf_source_path = "pdf_source"
+pdf_extract_result_path = "pdf_extract_result_path"
+kg_result_path = "kg_result_path"
+input_question = "What the difference between IoT and XoT?"
 clues = ""
-topic_entity = []
+pruned_question_entities = ""
+topic_entities = []
 
 
-def read_pdf():
-    # Processing PDF
-    pdf_input_path = "source"
-    pdf_output_path = "result"
-    result = pdf_reader.process_pdfs_in_folder(pdf_input_path, pdf_output_path)
-    return result
+def initialization():
+     #Find and Prune Topic entities
+    template = PromptTemplate(input_variables=["question"], template=prompt.question_ner_and_prune)
+    template_prompt = template.format(question=input_question)
+    pruned_question_entities = llm.llm_invoke(template_prompt)
+    topic_entities_pattern = re.compile(r'"*([^"]+)", "*([^"]+)"\]')
+    topic_entities_matches = topic_entities_pattern.findall(pruned_question_entities)
+    topic_entities = [(match) for match in topic_entities_matches]
+    
+    #Find chunk from documents using DRM dual-tower model
+    documents = []
+    for filename in os.listdir(pdf_extract_result_path):
+        if filename.endswith(".txt"):
+            documents_path = os.path.join(pdf_extract_result_path, filename)
+            with open(documents_path, 'r', encoding='utf-8') as file:
+                documents.append(file.read())
 
-def extract_entity_and_relation(extracted_text):
-    template = PromptTemplate(input_variables=["text"], template=prompt.ner_prompt_template)
-    template_prompt = template.format(text=extracted_text)
-    entity = llm.llm_invoke(template_prompt)
-    with open('output.txt', 'w', encoding='utf-8') as file:
-        file.write(entity)
-    return entity
+    chunks =  drm.Dense_Retrieval(input_question, documents) 
 
-def parse_entity_and_relation():
-    # Read the content of output.txt
-    with open('output.txt', 'r') as file:
-        text = file.read()
-
-    # Define regex patterns to match nodes and edges
-    node_pattern = re.compile(r'\((\d+),\s*"([^"]+)",\s*"([^"]+)"\)')
-    edge_pattern = re.compile(r'\((\d+),\s*(\d+),\s*"([^"]+)"\)')
-
-    # Parse Nodes
-    nodes_matches = node_pattern.findall(text)
-    Nodes = [(match[0], match[1], match[2]) for match in nodes_matches]
-
-    # Parse Edges
-    edges_matches = edge_pattern.findall(text)
-    Edges = [
-        (match[0], match[1], match[2]) for match in edges_matches
-    ]
-
-    print("Nodes:", Nodes)
-    print("Edges:", Edges)
-    return Nodes, Edges
-
-def create_knowledge_graph(entity, relation):
-    kg_output_path = "result"
-    G = knowledge_graph.build_knowledge_graph(entity, relation)
-    knowledge_graph.visualize_graph(G, kg_output_path)
-    return G
-
-def Create_PDF_KG():
-    #text = read_pdf()
-    #entity = extract_entity_and_relation(text)
-    entity, relation = parse_entity_and_relation()
-    G = create_knowledge_graph(entity, relation)
-    knowledge_graph.save_graph_to_image(G, "knowledge_graph.png")
-    #print(entity)
+    #Evaluates the sufficieny of knowledge to answer the question
+    reasoning_template = PromptTemplate(input_variables=["question", "clue", "chunk"], template=prompt.initialize_reasoning)
+    reasoning_template_prompt = reasoning_template.format(question=input_question, clue=clues, chunk=chunks)
+    reasoning_result = llm.llm_invoke(reasoning_template_prompt)
+    print(reasoning_result)
 
 if __name__ == "__main__":
-    Create_PDF_KG()
+    #pdf_reader.read_pdf(pdf_source_path, pdf_extract_result_path)
+    #knowledge_graph.Create_PDF_KG()
+    initialization()

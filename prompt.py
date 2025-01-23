@@ -1,9 +1,115 @@
 from langchain_core.prompts import PromptTemplate
 
-ner_prompt_template = """I will create a knowledge graph using networkx. You are a Large Language Model (LLM) capable of performing the Named Entity Recognition (NER) and Named Entity Linking (NEL) processes to find entities and their relationships in a text. Please create as many entity lists as you can from the following text: {text}. Create an output in json format with a list of nodes and edges so that it can be parsed using regex that matches the format needed to be input into the networkx function to create a knowledge graph. The output must only match the format, no need for small talk.
+ner_prompt_template = """I will create a knowledge graph using networkx. You are a Large Language Model (LLM) capable of performing the Named Entity Recognition (NER) and Named Entity Linking (NEL) processes to find entities and their relationships in a text. Please create as many entity lists and relation as you can from the following text: {text}. Create an output in json format with a list of nodes and edges so that it can be parsed using regex that matches the format needed to be input into the networkx function to create a knowledge graph. The output must only match the format, no need for small talk.
 Format Example:
 Nodes: [(node_id1, type, entity1), (node_id2, type, entity2), (node_id3, type, entity3)]
 Edges: [(node_id1, node_id2, relation1), ((node_id3, node_id4, relation2)]
+"""
+
+question_ner_and_prune = '''
+Given a question "{question}". 
+First identifies the entities present in the question as many as you can. The list of entity initial topic entities will be pruned to choose the two most relevant entities. write the pruned entities in JSON format.
+Format Example:
+Topics: ("entity1", "entity2")
+
+No need for small talk and just give the json format.
+'''
+
+initialize_reasoning= """
+Given a question: {question}, some clues: {clue} and chunk of related contexts: {chunk}, you are asked to evaluate if these resources, combined with your pre-existing knowledge, are sufficient to formulate a answer ((Yes)) or ((No)).
+Your answer must begin with ((Yes)) or ((No)).
+If ((Yes)), please note that the analyzed answer entity must be enclosed in curly brackets ((xxxxxx))
+If ((No)). which means the resources are useless or provide clues are helpful but insufficient to conclusively answer the question. Based on the given knowledge, if applicable, please summarize any insights so far that may be helpful for answering the question, which must also be enclosed in curly brackets ((xxxxxx)).
+"""
+
+hotpotqa_s1_prompt_demonstration = """
+Strictly follow the format of the below examples, provide two rationales before answering the question.
+Q: This British racing driver came in third at the 2014 Bahrain GP2 Series round and was born in what year
+A: First, at the 2014 Bahrain GP2 Series round, DAMS driver Jolyon Palmer came in third. Second, Jolyon Palmer (born 20 January 1991) is a British racing driver. The answer is 1991.
+
+Q: What band did Antony King work with that formed in 1985 in Manchester?
+A: First, Antony King worked as house engineer for Simply Red. Second, Simply Red formed in 1985 in Manchester. The answer is Simply Red.
+
+Q: How many inhabitants were in the city close to where Alberta Ferretti’s studios was located?
+A: First, Alberta Ferretti’s studio is near Rimini. Second, Rimini is a city of 146,606 inhabitants. The answer is 146,606.
+
+"""
+
+fever_s1_prompt_demonstration = """
+Determine if there is Observation that SUPPORTS or REFUTES a Claim, or if there is NOT ENOUGH INFO. Strictly follow the format of the below examples, provide two rationales before answering the question.
+Q: The Gadsden flag was named by Christopher Gadsden.
+A: First, The Gadsden flag is named after politician Christopher Gadsden. Second, there is no information on who named the Gadsden flag. The answer is NOT ENOUGH INFO.
+
+Q: Reg Watson is a current television producer.
+A: First, Reginald James Watson AM was an Australian television producer and screenwriter. Second, Reginald James Watson AM died on 8 October 2019. The answer is REFUTES.
+
+Q: Black Mirror is about society.
+A: First, Black Mirror is a British anthology television series. Second, The series uses technology to comment on contemporary social issues. The answer is SUPPORTS.
+
+"""
+
+fever_s1_prompt_demonstration_6_shot = """
+Determine if there is Observation that SUPPORTS or REFUTES a Claim, or if there is NOT ENOUGH INFO. Strictly follow the format of the below examples, provide two rationales before answering the question.
+Q: The Gadsden flag was named by Christopher Gadsden.
+A: First, The Gadsden flag is named after politician Christopher Gadsden. Second, there is no information on who named the Gadsden flag. The answer is NOT ENOUGH INFO.
+
+Q: Reg Watson is a current television producer.
+A: First, Reginald James Watson AM was an Australian television producer and screenwriter. Second, Reginald James Watson AM died on 8 October 2019. The answer is REFUTES.
+
+Q: Black Mirror is about society.
+A: First, Black Mirror is a British anthology television series. Second, The series uses technology to comment on contemporary social issues. The answer is SUPPORTS.
+
+Q: Shahid Kapoor has acted professionally.
+A: First, Shahid Kapoor is an Indian actor who appears in Hindi films. Second, there is no information on how he acted. The answer is NOT ENOUGH INFO.
+
+Q: Sierra Leone's first Bishop was Sir Milton Margai.
+A: First, Sir Milton Augustus Strieby Margai PC was a Sierra Leonean medical doctor and politician. Second, there is no information on him being the bishop. The answer is NOT ENOUGH INFO.
+
+Q: True Detective's second season was set in the most populous state of the United States.
+A: First, True Detective is an American anthology crime drama television series. Its second season is set in California. Second, California is the most populous U.S. state. The answer is SUPPORTS.
+
+"""
+
+
+prompt_reasoning_fever_query_change_3shot = """
+# Task: Given a claim, the associated retrieved knowledge triplets and references, you are asked to answer whether the provided references sufficient to verify the claim ({{Yes}} or {{No}}). 
+# Note that your answer must begin with {{Yes}} or {{No}}. If you answered {{Yes}}, you must indicate whether the given references SUPPORT or REFUTE the claim, and enclose the result in curly brackets {{SUPPORTS/REFUTES}}. If {No}, it means the resources are useless or provide clues that are helpful but insufficient to answer the question conclusively. Based on the given knowledge, please summarize any insights (if any) so far that may help answer the question, which must also be enclosed in curly brackets{xxxxxx}
+# Here are some examples:
+
+# Example 1:
+Claim: "The Great Wall of China is visible from space with the naked eye."
+Clues: None
+Knowledge Triplets:
+(The Great Wall of China, located in, China)
+Retrieved References:
+The Great Wall of China, although a massive structure, is not visible to the naked eye from space
+The myth that the Great Wall of China is visible from space was debunked
+Answer: {{Yes}}, the first sentences explicitly states that the Great Wall is not visible from space with the naked eye. Additionally, the the second sentence confirms that this is a myth and was debunked. The knowledge triplets provide conflicting information, but the references clearly refute the claim. Therefore the answer is {{REFUTES}}
+
+# Example 2:
+Claim: "CRISPR technology can be used to edit genes in human embryos."
+Clues: None
+Knowledge Triplets:
+(CRISPR, used in, gene editing)
+(CRISPR, edits, human embryos)
+(Gene editing, possible in, human embryos)
+Retrieved References:
+CRISPR-Cas9 has been successfully used to edit genes in human embryos, raising both hopes for curing genetic diseases and ethical concerns.
+Recent experiments have demonstrated the potential of CRISPR to edit genes in human embryos, though the technology is still in its experimental stages and surrounded by ethical debates.
+Answer: {{Yes}}, the references explicitly states that CRISPR-Cas9 has been used to edit genes in human embryos, mentioning both the scientific success and the ethical implications. The references also confirms this by discussing recent experiments that have demonstrated the potential of CRISPR for gene editing in human embryos, although it notes that the technology is still experimental. The knowledge triplets align with the claim, and the references provide robust evidence to support it. There the answer is {{SUPPORTS}}
+
+# Example 3:
+Claim: "Albert Einstein won the Nobel Prize in Chemistry."
+Clues: None
+Knowledge Triplets:
+(Albert Einstein, won, Nobel Prize in Physics)
+(Nobel Prize in Chemistry, won by, Marie Curie)
+Retrieved References:
+Albert Einstein was awarded the Nobel Prize in Physics in 1921.
+Nobel Prize official site: "Marie Curie was awarded the Nobel Prize in Chemistry in 1911.
+Answer: {{No}}, the claim that "Albert Einstein won the Nobel Prize in Chemistry" is not provided by the given references. The Wikipedia page states that Einstein won the Nobel Prize in Physics, not Chemistry. The Nobel Prize site mentions Marie Curie as a recipient of the Chemistry prize. There is insufficient evidence to evaluate the claim. Therefore uesful clues so far is {{Einstein won the Nobel Prize in Physics, not Chemistry}}.
+
+# Now, please carefully consider the following case:
 """
 
 extract_relation_prompt = """Please retrieve %s relations (separated by semicolon) that contribute to the question and rate their contribution on a scale from 0 to 1 (the sum of the scores of %s relations is 1).
@@ -48,7 +154,8 @@ Steve Bisciotti, organization.organization_founder.organizations_founded, Allegi
 A: Based on the given knowledge triplets, the coach of the team owned by Steve Bisciotti is not explicitly mentioned. However, it can be inferred that the team owned by Steve Bisciotti is the Baltimore Ravens, a professional sports team. Therefore, additional knowledge about the current coach of the Baltimore Ravens can be used to answer the question.
 
 Q: Rift Valley Province is located in a nation that uses which form of currency?
-Knowledge Triplets: Rift Valley Province, location.administrative_division.country, Kenya
+Knowledge Triplets: Rift Valley Province, location.administrative_division.country, KenyaGiven a question, some clues, the associated retrieved knowledge triplets and related contexts, you
+are asked to evaluate if these resources, combined with your pre-existing knowledge, are sufficient
 Rift Valley Province, location.location.geolocation, UnName_Entity
 Rift Valley Province, location.mailing_address.state_province_region, UnName_Entity
 Kenya, location.country.currency_used, Kenyan shilling
